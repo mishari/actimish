@@ -61,11 +61,15 @@ You should see the Actimish commits.
 
 ## Step 4: Install Python Dependencies
 
+**Important**: Opalstack's GCC 4.8.2 lacks C++11 support, so we must use pre-compiled wheels for greenlet:
+
 ```bash
 source env/bin/activate
-pip install -r requirements.txt
+pip install --only-binary greenlet -r requirements.txt
 deactivate
 ```
+
+(The `--only-binary greenlet` flag prevents pip from trying to compile greenlet from source, which would fail on old GCC.)
 
 ## Step 5: Run One-Time Setup
 
@@ -158,7 +162,7 @@ cd /home/actimish/apps/actimish
 git pull origin main
 
 source env/bin/activate
-pip install -r requirements.txt
+pip install --only-binary greenlet -r requirements.txt
 deactivate
 
 # Sync code to myapp/

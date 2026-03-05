@@ -35,9 +35,9 @@ rsync -av --delete --exclude='.git' --exclude='env' --exclude='.venv' --exclude=
 echo "Activating virtualenv..."
 source "$APPDIR/env/bin/activate"
 
-# Install dependencies
+# Install dependencies (with greenlet pre-compiled to avoid GCC C++11 issue)
 echo "Installing dependencies..."
-pip install -r "$APPDIR/requirements.txt"
+pip install --only-binary greenlet -r "$APPDIR/requirements.txt"
 
 # Run setup if data/ doesn't exist (first-time deployment)
 if [ ! -d "$APPDIR/data" ]; then

@@ -7,3 +7,4 @@ Pillow==9.*
 python-magic==0.4.*
 gunicorn==20.*
 bleach==5.*
+greenlet==1.1.*

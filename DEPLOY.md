@@ -31,8 +31,11 @@ source env/bin/activate
 ```
 
 ### 4. Install dependencies
+
+**Important**: Opalstack's GCC 4.8.2 lacks C++11 support. Use pre-compiled wheels for greenlet:
+
 ```bash
-pip install -r requirements.txt
+pip install --only-binary greenlet -r requirements.txt
 ```
 
 ### 5. Run one-time setup
@@ -93,7 +96,7 @@ cd /home/actimish/apps/actimish
 git pull origin main
 
 source env/bin/activate
-pip install -r requirements.txt
+pip install --only-binary greenlet -r requirements.txt
 deactivate
 
 # Sync code to myapp/ (uWSGI expects it there)
@@ -143,7 +146,7 @@ Common issues:
 ### "ImportError: No module named" errors
 ```bash
 source env/bin/activate
-pip install -r requirements.txt
+pip install --only-binary greenlet -r requirements.txt
 deactivate
 ./stop
 ./start
