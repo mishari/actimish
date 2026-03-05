@@ -14,6 +14,14 @@ def _instance_v1():
     base = f"https://{config.DOMAIN}"
     local_posts = Status.query.filter_by(remote=False, deleted_at=None).count()
 
+    # Tusky and other clients use this to enforce compose limits. Actimish
+    # treats 0 as unlimited, so report a very large limit.
+    max_characters = (
+        config.MAX_STATUS_LENGTH
+        if config.MAX_STATUS_LENGTH and config.MAX_STATUS_LENGTH > 0
+        else 2147483647
+    )
+
     return {
         "uri": config.DOMAIN,
         "title": f"{config.DISPLAY_NAME}'s instance",
@@ -37,7 +45,7 @@ def _instance_v1():
         "configuration": {
             "accounts": {"max_featured_tags": 10},
             "statuses": {
-                "max_characters": config.MAX_STATUS_LENGTH if config.MAX_STATUS_LENGTH > 0 else 500000,
+                "max_characters": max_characters,
                 "max_media_attachments": config.MAX_MEDIA_ATTACHMENTS,
                 "characters_reserved_per_url": 23,
             },
