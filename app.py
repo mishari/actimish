@@ -28,6 +28,8 @@ def create_app():
         # Generate RSA keypair if not present
         from utils.crypto import ensure_keypair
         ensure_keypair()
+        # Load persisted settings (display_name, bio) from data/settings.json
+        config.apply_persisted_settings()
 
     # ── CORS: allow Tusky and other clients ───────────────────────
     @app.after_request

@@ -115,6 +115,9 @@ def _base_url():
 
 def serialize_account_local():
     """Serialize the single local user account."""
+    import os
+    from utils.settings import get_setting
+    
     followers_count = 0
     following_count = 0
     statuses_count = 0
@@ -126,6 +129,28 @@ def serialize_account_local():
         statuses_count = StatusModel.query.filter_by(remote=False, deleted_at=None).count()
     except Exception:
         # During early startup / migrations, DB may not be ready.
+        pass
+
+    # Determine avatar and header URLs based on what files exist
+    base_url = _base_url()
+    avatar_url = f"{base_url}/avatar.png"
+    header_url = f"{base_url}/header.png"
+    
+    # Check for actual avatar/header files with different extensions
+    try:
+        for ext in ["png", "jpg", "jpeg", "gif", "webp"]:
+            avatar_path = os.path.join(config.DATA_DIR, f"avatar.{ext}")
+            if os.path.exists(avatar_path):
+                avatar_url = f"{base_url}/avatar.{ext}"
+                break
+        
+        for ext in ["png", "jpg", "jpeg", "gif", "webp"]:
+            header_path = os.path.join(config.DATA_DIR, f"header.{ext}")
+            if os.path.exists(header_path):
+                header_url = f"{base_url}/header.{ext}"
+                break
+    except Exception:
+        # If any error, fall back to defaults
         pass
 
     return {
@@ -141,10 +166,10 @@ def serialize_account_local():
         "note": config.BIO or "",
         "url": f"{_base_url()}/@{config.USERNAME}",
         "uri": f"{_base_url()}/users/{config.USERNAME}",
-        "avatar": f"{_base_url()}/avatar.png",
-        "avatar_static": f"{_base_url()}/avatar.png",
-        "header": f"{_base_url()}/header.png",
-        "header_static": f"{_base_url()}/header.png",
+        "avatar": avatar_url,
+        "avatar_static": avatar_url,
+        "header": header_url,
+        "header_static": header_url,
         "followers_count": followers_count,
         "following_count": following_count,
         "statuses_count": statuses_count,

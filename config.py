@@ -11,8 +11,31 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # ── Domain & Identity ──────────────────────────────────────────────
 DOMAIN = os.environ.get("ACTIMISH_DOMAIN", "a.mishari.net")
 USERNAME = os.environ.get("ACTIMISH_USERNAME", "mishari")
-DISPLAY_NAME = os.environ.get("ACTIMISH_DISPLAY_NAME", "Mishari")
-BIO = os.environ.get("ACTIMISH_BIO", "")
+
+# Display name and bio can be overridden by persisted settings
+_DISPLAY_NAME_ENV = os.environ.get("ACTIMISH_DISPLAY_NAME", "Mishari")
+_BIO_ENV = os.environ.get("ACTIMISH_BIO", "")
+DISPLAY_NAME = _DISPLAY_NAME_ENV
+BIO = _BIO_ENV
+
+
+def apply_persisted_settings():
+    """
+    Load persisted display_name and bio from data/settings.json.
+    Called on app startup to apply any changes made via update_credentials.
+    """
+    global DISPLAY_NAME, BIO
+    try:
+        from utils.settings import get_setting
+        display_name = get_setting("display_name")
+        bio = get_setting("bio")
+        if display_name is not None:
+            DISPLAY_NAME = display_name
+        if bio is not None:
+            BIO = bio
+    except (ImportError, FileNotFoundError):
+        # Settings file doesn't exist yet or error reading it
+        pass
 
 # ── Paths ──────────────────────────────────────────────────────────
 DATA_DIR = os.environ.get("ACTIMISH_DATA_DIR", os.path.join(BASE_DIR, "data"))

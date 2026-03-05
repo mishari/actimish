@@ -48,31 +48,111 @@ def verify_credentials():
 @require_auth
 def update_credentials():
     """Update profile (display name, bio, avatar, header)."""
+    import os
+    from PIL import Image
+    from io import BytesIO
+    from utils.settings import update_settings
+    from utils.media import detect_mime
+
     data = request.form.to_dict()
 
+    # Update display_name and bio in config and settings
     if "display_name" in data:
         config.DISPLAY_NAME = data["display_name"]
+        update_settings(display_name=data["display_name"])
     if "note" in data:
         config.BIO = data["note"]
+        update_settings(bio=data["note"])
 
     # Handle avatar upload
     if "avatar" in request.files:
-        import os
-        from werkzeug.utils import secure_filename
-
         f = request.files["avatar"]
-        filename = secure_filename(f.filename or "avatar.png")
-        path = os.path.join(config.DATA_DIR, "avatar.png")
-        f.save(path)
+        if f and f.filename:
+            try:
+                # Read file content
+                file_data = f.read()
+                f.seek(0)
+
+                # Detect MIME type
+                mime_type = detect_mime(file_data, f.filename)
+                if mime_type not in config.ALLOWED_IMAGE_TYPES:
+                    return jsonify({"error": "Invalid image type"}), 400
+
+                # Determine file extension
+                ext_map = {
+                    "image/jpeg": "jpg",
+                    "image/png": "png",
+                    "image/gif": "gif",
+                    "image/webp": "webp",
+                }
+                ext = ext_map.get(mime_type, "png")
+
+                # Open image and resize if needed
+                img = Image.open(BytesIO(file_data))
+                max_dim = 400
+                if img.width > max_dim or img.height > max_dim:
+                    img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
+
+                # Save avatar with correct extension
+                avatar_path = os.path.join(config.DATA_DIR, f"avatar.{ext}")
+                
+                # Remove old avatar files if extension changed
+                for old_ext in ["png", "jpg", "jpeg", "gif", "webp"]:
+                    old_path = os.path.join(config.DATA_DIR, f"avatar.{old_ext}")
+                    if old_path != avatar_path and os.path.exists(old_path):
+                        os.remove(old_path)
+
+                img.save(avatar_path)
+
+                # Store MIME type in settings
+                update_settings(avatar_mime=mime_type)
+            except Exception as e:
+                return jsonify({"error": f"Failed to process avatar: {str(e)}"}), 400
 
     # Handle header upload
     if "header" in request.files:
-        import os
-        from werkzeug.utils import secure_filename
-
         f = request.files["header"]
-        path = os.path.join(config.DATA_DIR, "header.png")
-        f.save(path)
+        if f and f.filename:
+            try:
+                # Read file content
+                file_data = f.read()
+                f.seek(0)
+
+                # Detect MIME type
+                mime_type = detect_mime(file_data, f.filename)
+                if mime_type not in config.ALLOWED_IMAGE_TYPES:
+                    return jsonify({"error": "Invalid image type"}), 400
+
+                # Determine file extension
+                ext_map = {
+                    "image/jpeg": "jpg",
+                    "image/png": "png",
+                    "image/gif": "gif",
+                    "image/webp": "webp",
+                }
+                ext = ext_map.get(mime_type, "png")
+
+                # Open image and resize if needed
+                img = Image.open(BytesIO(file_data))
+                max_dim = 400
+                if img.width > max_dim or img.height > max_dim:
+                    img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
+
+                # Save header with correct extension
+                header_path = os.path.join(config.DATA_DIR, f"header.{ext}")
+                
+                # Remove old header files if extension changed
+                for old_ext in ["png", "jpg", "jpeg", "gif", "webp"]:
+                    old_path = os.path.join(config.DATA_DIR, f"header.{old_ext}")
+                    if old_path != header_path and os.path.exists(old_path):
+                        os.remove(old_path)
+
+                img.save(header_path)
+
+                # Store MIME type in settings
+                update_settings(header_mime=mime_type)
+            except Exception as e:
+                return jsonify({"error": f"Failed to process header: {str(e)}"}), 400
 
     return jsonify(serialize_credential_account())
 

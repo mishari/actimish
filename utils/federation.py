@@ -115,13 +115,13 @@ def build_actor_object():
         "published": "2026-01-01T00:00:00Z",
         "icon": {
             "type": "Image",
-            "mediaType": "image/png",
-            "url": f"{base}/avatar.png",
+            "mediaType": _get_avatar_mime_type(),
+            "url": _get_avatar_url(base),
         },
         "image": {
             "type": "Image",
-            "mediaType": "image/png",
-            "url": f"{base}/header.png",
+            "mediaType": _get_header_mime_type(),
+            "url": _get_header_url(base),
         },
         "endpoints": {
             "sharedInbox": f"{base}/inbox",
@@ -189,6 +189,84 @@ def build_note_object(status):
         note["contentMap"] = {status.language: status.content}
 
     return note
+
+
+def _get_avatar_mime_type():
+    """Get the MIME type of the current avatar."""
+    import os
+    from utils.settings import get_setting
+    
+    # Check settings first
+    mime = get_setting("avatar_mime")
+    if mime:
+        return mime
+    
+    # Fall back to checking what file exists
+    for ext in ["png", "jpg", "jpeg", "gif", "webp"]:
+        path = os.path.join(config.DATA_DIR, f"avatar.{ext}")
+        if os.path.isfile(path):
+            ext_mime_map = {
+                "png": "image/png",
+                "jpg": "image/jpeg",
+                "jpeg": "image/jpeg",
+                "gif": "image/gif",
+                "webp": "image/webp",
+            }
+            return ext_mime_map.get(ext, "image/png")
+    
+    return "image/png"
+
+
+def _get_avatar_url(base):
+    """Get the full URL to the current avatar."""
+    import os
+    
+    # Check what avatar file exists
+    for ext in ["png", "jpg", "jpeg", "gif", "webp"]:
+        path = os.path.join(config.DATA_DIR, f"avatar.{ext}")
+        if os.path.isfile(path):
+            return f"{base}/avatar.{ext}"
+    
+    return f"{base}/avatar.png"
+
+
+def _get_header_mime_type():
+    """Get the MIME type of the current header."""
+    import os
+    from utils.settings import get_setting
+    
+    # Check settings first
+    mime = get_setting("header_mime")
+    if mime:
+        return mime
+    
+    # Fall back to checking what file exists
+    for ext in ["png", "jpg", "jpeg", "gif", "webp"]:
+        path = os.path.join(config.DATA_DIR, f"header.{ext}")
+        if os.path.isfile(path):
+            ext_mime_map = {
+                "png": "image/png",
+                "jpg": "image/jpeg",
+                "jpeg": "image/jpeg",
+                "gif": "image/gif",
+                "webp": "image/webp",
+            }
+            return ext_mime_map.get(ext, "image/png")
+    
+    return "image/png"
+
+
+def _get_header_url(base):
+    """Get the full URL to the current header."""
+    import os
+    
+    # Check what header file exists
+    for ext in ["png", "jpg", "jpeg", "gif", "webp"]:
+        path = os.path.join(config.DATA_DIR, f"header.{ext}")
+        if os.path.isfile(path):
+            return f"{base}/header.{ext}"
+    
+    return f"{base}/header.png"
 
 
 def _epoch_to_w3c(epoch):
