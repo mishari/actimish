@@ -1,154 +1,207 @@
 # Deployment on Opalstack
 
-This guide walks through deploying Actimish on Opalstack.
+This guide walks through deploying Actimish on Opalstack using uWSGI.
 
-## Prerequisites
+## Opalstack Architecture
 
-- Opalstack account with a Python/WSGI app created
-- Domain configured (e.g., `a.mishari.net`)
-- SSH access to your Opalstack account
+Opalstack uses **uWSGI** to run Python WSGI apps. Key points:
+- App directory: `/home/actimish/apps/actimish`
+- uWSGI config: `uwsgi.ini`
+- Code is served from: `myapp/` subdirectory
+- Logs: `/home/actimish/logs/apps/actimish/uwsgi.log`
+- PID file: `/home/actimish/apps/actimish/tmp/actimish.pid`
 
-## Opalstack Setup (One-time)
+## Initial Setup (One-time)
 
-1. **Create a Python/WSGI application** in the Opalstack dashboard:
-   - Go to **Applications** → **Create** → **Python/WSGI**
-   - Set a name (e.g., `actimish`)
-   - Note the app directory path (usually `/home/USERNAME/apps/APPNAME`)
-
-2. **Configure environment variables** in the Opalstack dashboard:
-   - Set these in the app's **Environment Variables** section:
-     ```
-     ACTIMISH_DOMAIN=a.mishari.net
-     ACTIMISH_USERNAME=mishari
-     ACTIMISH_DISPLAY_NAME=Your Name
-     ACTIMISH_BIO=Your bio
-     ```
-
-3. **SSH into your Opalstack account**:
-   ```bash
-   ssh actimish@opal16.opalstack.com
-   cd /home/actimish/apps/actimish
-   ```
-
-## Initial Deployment
-
-Run these commands **once** to set up the app:
-
+### 1. SSH into Opalstack
 ```bash
-# Navigate to app directory
+ssh actimish@opal16.opalstack.com
 cd /home/actimish/apps/actimish
-
-# Clone or pull the repo (first time)
-git clone https://github.com/mishari/actimish.git .
-# OR if already cloned, pull latest
-git pull origin main
-
-# Create and activate virtualenv (if not already done)
-python3 -m venv env
-source env/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run one-time setup (creates DB, keys, password/secret files)
-python setup.py
-# This will prompt for password and secret key, storing them in data/
-
-# Deactivate venv
-deactivate
 ```
 
-## Update Deployment (Regularly)
-
-To deploy updated code from GitHub:
-
+### 2. Clone the repo (if not already done)
 ```bash
-cd /home/actimish/apps/actimish
+git clone https://github.com/mishari/actimish.git .
+```
 
-# Stop the app (if running)
-./stop
-
-# Pull latest code
-git pull origin main
-
-# Activate venv and install any new deps
+### 3. Create and activate virtualenv
+```bash
+python3 -m venv env
 source env/bin/activate
-pip install -r requirements.txt
-deactivate
+```
 
-# Start the app
+### 4. Install dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### 5. Run one-time setup
+```bash
+python setup.py
+```
+This creates:
+- `data/actimish.db` - SQLite database
+- `data/secret_key.txt` - Flask secret key
+- `data/password.txt` - OAuth login password
+- RSA keys in `data/keys/`
+
+### 6. Set environment variables
+
+Create a `.env` file (or set in Opalstack dashboard):
+```bash
+cat > .env <<EOF
+ACTIMISH_DOMAIN=a.mishari.net
+ACTIMISH_USERNAME=mishari
+ACTIMISH_DISPLAY_NAME=Your Name
+ACTIMISH_BIO=Your bio
+EOF
+```
+
+### 7. Deactivate venv and verify
+```bash
+deactivate
+chmod +x opalstack_deploy.sh
+```
+
+### 8. Start the app
+```bash
 ./start
 ```
 
-## Configure Opalstack to Run Your App
+## Update Deployment (After pulling code changes)
 
-In the Opalstack **dashboard** for your app:
+Run the included deployment script:
 
-1. **Start command**: Point to the startup script:
-   ```
-   /home/actimish/apps/actimish/opalstack_start.sh
-   ```
+```bash
+cd /home/actimish/apps/actimish
+./opalstack_deploy.sh
+```
 
-2. Alternatively, use gunicorn directly:
-   ```
-   /home/actimish/apps/actimish/env/bin/gunicorn wsgi:application --bind 127.0.0.1:PORT --workers 2 --timeout 120
-   ```
-   (Replace `PORT` with the port assigned by Opalstack, or use 8000)
+This script:
+1. Stops the app
+2. Pulls latest code from GitHub
+3. Syncs code into `myapp/` (required by uWSGI config)
+4. Installs any new dependencies
+5. Restarts the app
 
-3. **Restart the application** using the Opalstack dashboard or run:
-   ```bash
-   ./start
-   ```
+### Or manually:
+
+```bash
+cd /home/actimish/apps/actimish
+./stop
+
+git pull origin main
+
+source env/bin/activate
+pip install -r requirements.txt
+deactivate
+
+# Sync code to myapp/ (uWSGI expects it there)
+rsync -av --delete --exclude='.git' --exclude='env' --exclude='.venv' --exclude='tmp' --exclude='myapp' . myapp/
+
+./start
+```
 
 ## Verify Deployment
 
-After starting, check the app:
-
+### Check if the app is running
 ```bash
-# View recent logs
-tail -f tmp/actimish.log
-# or check Opalstack dashboard logs
+ps aux | grep uwsgi
+# Should show: uwsgi processes bound to 127.0.0.1:21784
+```
 
-# Test a quick endpoint
+### Check logs
+```bash
+tail -f /home/actimish/logs/apps/actimish/uwsgi.log
+```
+
+### Test an endpoint
+```bash
 curl https://a.mishari.net/api/v1/instance
+# Should return JSON with instance info
+```
 
-# Check if data files were created
-ls -la data/
-ls -la data/*.txt  # should see password.txt, secret_key.txt
+### Test WebFinger
+```bash
+curl https://a.mishari.net/.well-known/webfinger?resource=acct:mishari@a.mishari.net
+# Should return actor info
 ```
 
 ## Troubleshooting
 
-### "Module not found" or import errors
-- Ensure `env/bin/python` is being used (check `source env/bin/activate` ran)
-- Verify `pip install -r requirements.txt` completed
+### uWSGI won't start
+Check logs:
+```bash
+tail -f /home/actimish/logs/apps/actimish/uwsgi.log
+```
 
-### Database errors
-- Run `python setup.py` again to reinitialize
-- Check that `data/` directory is writable: `ls -la data/`
+Common issues:
+- Python import error: `pip install -r requirements.txt` again
+- Port in use: Kill with `./kill`, then `./start`
+- Database locked: Remove stale `.db-journal` file
 
-### Port already in use
-- Change `PORT` in `opalstack_start.sh` or Opalstack config
-- Kill existing process: `./kill`
+### "ImportError: No module named" errors
+```bash
+source env/bin/activate
+pip install -r requirements.txt
+deactivate
+./stop
+./start
+```
 
-### Domain not resolving
-- Ensure DNS A record points to Opalstack IP
-- Check Opalstack dashboard under **Domains**
+### Code changes not taking effect
+Ensure `myapp/` is synced:
+```bash
+rsync -av --delete --exclude='.git' --exclude='env' --exclude='.venv' --exclude='tmp' --exclude='myapp' . myapp/
+touch myapp/wsgi.py  # uWSGI reloads on touch
+```
+
+Or use the deployment script:
+```bash
+./opalstack_deploy.sh
+```
+
+### Data files missing (password.txt, secret_key.txt)
+Run setup again:
+```bash
+source env/bin/activate
+python setup.py
+deactivate
+```
 
 ## Files Overview
 
-- `wsgi.py` - WSGI entry point (what Opalstack calls)
-- `opalstack_start.sh` - Startup script with environment loading
-- `app.py` - Flask app factory
-- `setup.py` - One-time setup script (creates DB, keys, etc.)
-- `data/` - Persistent data (created by setup.py, not in git)
-  - `secret_key.txt` - Flask secret key
-  - `password.txt` - OAuth password
-  - `actimish.db` - SQLite database
+| File | Purpose |
+|------|---------|
+| `uwsgi.ini` | uWSGI configuration (Opalstack manages) |
+| `opalstack_deploy.sh` | Deployment script (pull + sync + restart) |
+| `wsgi.py` | WSGI entry point |
+| `app.py` | Flask app factory |
+| `setup.py` | One-time setup script |
+| `config.py` | Configuration (reads env vars) |
+| `myapp/` | Symlinked/synced code (uWSGI reads from here) |
+| `data/` | Persistent data (DB, keys, secrets) |
+| `env/` | Virtual environment |
+
+## Control Scripts
+
+- `./start` - Start the app (uWSGI daemon)
+- `./stop` - Stop the app
+- `./kill` - Force-kill stuck processes
 
 ## Next Steps
 
-Once deployed:
-1. Test the instance metadata: `curl https://your-domain/api/v1/instance`
-2. Test WebFinger: `curl https://your-domain/.well-known/webfinger?resource=acct:username@domain`
-3. Register an app and try logging in with a Mastodon client (e.g., Tusky)
+Once deployed and running:
+
+1. **Register a Mastodon client** (e.g., in Tusky):
+   - Server: `a.mishari.net`
+   - Username: `mishari` (or your `ACTIMISH_USERNAME`)
+   - Password: From `data/password.txt`
+
+2. **Verify federation**:
+   - Check WebFinger: `curl https://a.mishari.net/.well-known/webfinger?resource=acct:mishari@a.mishari.net`
+   - Check ActivityPub actor: `curl https://a.mishari.net/users/mishari`
+
+3. **Monitor**:
+   - Tail logs: `tail -f /home/actimish/logs/apps/actimish/uwsgi.log`
+   - Check app status: `ps aux | grep uwsgi`
