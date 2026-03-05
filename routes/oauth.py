@@ -264,7 +264,7 @@ def revoke():
         token_obj.revoked = True
         db.session.commit()
 
-    return "{}", 200
+    return jsonify({}), 200
 
 
 @oauth_bp.route("/api/v1/apps/verify_credentials", methods=["GET"])

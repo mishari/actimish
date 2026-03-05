@@ -26,6 +26,18 @@ from utils.serializers import (
 api_accounts_bp = Blueprint("api_accounts", __name__)
 
 
+def _parse_int(value):
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_int_default(value, default):
+    parsed = _parse_int(value)
+    return default if parsed is None else parsed
+
+
 @api_accounts_bp.route("/api/v1/accounts/verify_credentials", methods=["GET"])
 @require_auth
 def verify_credentials():
@@ -84,7 +96,7 @@ def account_lookup():
 @api_accounts_bp.route("/api/v1/accounts/search", methods=["GET"])
 def accounts_search():
     q = request.args.get("q", "")
-    limit = min(int(request.args.get("limit", 40)), 80)
+    limit = min(_parse_int_default(request.args.get("limit"), 40), 80)
     results = []
 
     if config.USERNAME.startswith(q) or config.DISPLAY_NAME.lower().startswith(q.lower()):
@@ -141,7 +153,10 @@ def familiar_followers():
 def get_account(account_id):
     if account_id == "1":
         return jsonify(serialize_account_local())
-    ra = RemoteAccount.query.get(int(account_id))
+    aid = _parse_int(account_id)
+    if aid is None:
+        return jsonify({"error": "Record not found"}), 404
+    ra = RemoteAccount.query.get(aid)
     if ra:
         return jsonify(serialize_remote_account(ra))
     return jsonify({"error": "Record not found"}), 404
@@ -149,7 +164,7 @@ def get_account(account_id):
 
 @api_accounts_bp.route("/api/v1/accounts/<account_id>/statuses", methods=["GET"])
 def account_statuses(account_id):
-    limit = min(int(request.args.get("limit", 20)), 40)
+    limit = min(_parse_int_default(request.args.get("limit"), 20), 40)
     max_id = request.args.get("max_id")
     min_id = request.args.get("min_id")
     since_id = request.args.get("since_id")
@@ -161,7 +176,10 @@ def account_statuses(account_id):
     if account_id == "1":
         query = Status.query.filter_by(remote=False, deleted_at=None)
     else:
-        ra = RemoteAccount.query.get(int(account_id))
+        aid = _parse_int(account_id)
+        if aid is None:
+            return jsonify({"error": "Record not found"}), 404
+        ra = RemoteAccount.query.get(aid)
         if not ra:
             return jsonify({"error": "Record not found"}), 404
         query = Status.query.filter_by(
@@ -174,12 +192,15 @@ def account_statuses(account_id):
         query = query.filter(Status.in_reply_to_id.is_(None))
     if exclude_reblogs:
         query = query.filter(Status.reblog_of_id.is_(None))
-    if max_id:
-        query = query.filter(Status.id < int(max_id))
-    if min_id:
-        query = query.filter(Status.id > int(min_id))
-    if since_id:
-        query = query.filter(Status.id > int(since_id))
+    try:
+        if max_id:
+            query = query.filter(Status.id < int(max_id))
+        if min_id:
+            query = query.filter(Status.id > int(min_id))
+        if since_id:
+            query = query.filter(Status.id > int(since_id))
+    except ValueError:
+        pass
 
     statuses = query.order_by(Status.id.desc()).limit(limit).all()
 
@@ -197,7 +218,7 @@ def account_statuses(account_id):
 def account_followers(account_id):
     if account_id != "1":
         return jsonify([])
-    limit = min(int(request.args.get("limit", 40)), 80)
+    limit = min(_parse_int_default(request.args.get("limit"), 40), 80)
     followers = Follower.query.filter_by(approved=True).limit(limit).all()
     return jsonify(
         [serialize_remote_account(f.remote_account) for f in followers if f.remote_account]
@@ -208,7 +229,7 @@ def account_followers(account_id):
 def account_following(account_id):
     if account_id != "1":
         return jsonify([])
-    limit = min(int(request.args.get("limit", 40)), 80)
+    limit = min(_parse_int_default(request.args.get("limit"), 40), 80)
     following = Following.query.filter_by(approved=True).limit(limit).all()
     return jsonify(
         [serialize_remote_account(f.remote_account) for f in following if f.remote_account]
@@ -218,7 +239,10 @@ def account_following(account_id):
 @api_accounts_bp.route("/api/v1/accounts/<account_id>/follow", methods=["POST"])
 @require_auth
 def follow_account(account_id):
-    ra = RemoteAccount.query.get(int(account_id))
+    aid = _parse_int(account_id)
+    if aid is None:
+        return jsonify({"error": "Record not found"}), 404
+    ra = RemoteAccount.query.get(aid)
     if not ra:
         return jsonify({"error": "Record not found"}), 404
 
@@ -257,7 +281,10 @@ def follow_account(account_id):
 @api_accounts_bp.route("/api/v1/accounts/<account_id>/unfollow", methods=["POST"])
 @require_auth
 def unfollow_account(account_id):
-    ra = RemoteAccount.query.get(int(account_id))
+    aid = _parse_int(account_id)
+    if aid is None:
+        return jsonify({"error": "Record not found"}), 404
+    ra = RemoteAccount.query.get(aid)
     if not ra:
         return jsonify({"error": "Record not found"}), 404
 
@@ -299,7 +326,10 @@ def unfollow_account(account_id):
 @api_accounts_bp.route("/api/v1/accounts/<account_id>/block", methods=["POST"])
 @require_auth
 def block_account(account_id):
-    ra = RemoteAccount.query.get(int(account_id))
+    aid = _parse_int(account_id)
+    if aid is None:
+        return jsonify({"error": "Record not found"}), 404
+    ra = RemoteAccount.query.get(aid)
     if not ra:
         return jsonify({"error": "Record not found"}), 404
     existing = Block.query.filter_by(remote_account_id=ra.id).first()
@@ -316,7 +346,10 @@ def block_account(account_id):
 @api_accounts_bp.route("/api/v1/accounts/<account_id>/unblock", methods=["POST"])
 @require_auth
 def unblock_account(account_id):
-    ra = RemoteAccount.query.get(int(account_id))
+    aid = _parse_int(account_id)
+    if aid is None:
+        return jsonify({"error": "Record not found"}), 404
+    ra = RemoteAccount.query.get(aid)
     if not ra:
         return jsonify({"error": "Record not found"}), 404
     Block.query.filter_by(remote_account_id=ra.id).delete()
@@ -327,7 +360,10 @@ def unblock_account(account_id):
 @api_accounts_bp.route("/api/v1/accounts/<account_id>/mute", methods=["POST"])
 @require_auth
 def mute_account(account_id):
-    ra = RemoteAccount.query.get(int(account_id))
+    aid = _parse_int(account_id)
+    if aid is None:
+        return jsonify({"error": "Record not found"}), 404
+    ra = RemoteAccount.query.get(aid)
     if not ra:
         return jsonify({"error": "Record not found"}), 404
     existing = Mute.query.filter_by(remote_account_id=ra.id).first()
@@ -344,7 +380,10 @@ def mute_account(account_id):
 @api_accounts_bp.route("/api/v1/accounts/<account_id>/unmute", methods=["POST"])
 @require_auth
 def unmute_account(account_id):
-    ra = RemoteAccount.query.get(int(account_id))
+    aid = _parse_int(account_id)
+    if aid is None:
+        return jsonify({"error": "Record not found"}), 404
+    ra = RemoteAccount.query.get(aid)
     if not ra:
         return jsonify({"error": "Record not found"}), 404
     Mute.query.filter_by(remote_account_id=ra.id).delete()

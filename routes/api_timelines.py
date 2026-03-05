@@ -11,19 +11,26 @@ from utils.serializers import serialize_status
 api_timelines_bp = Blueprint("api_timelines", __name__)
 
 
+def _parse_int(value, default=None):
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
+
+
 def _paginate_statuses(query, req):
     """Apply common pagination parameters to a status query."""
-    limit = min(int(req.args.get("limit", 20)), 40)
-    max_id = req.args.get("max_id")
-    min_id = req.args.get("min_id")
-    since_id = req.args.get("since_id")
+    limit = min(_parse_int(req.args.get("limit"), 20), 40)
+    max_id = _parse_int(req.args.get("max_id"))
+    min_id = _parse_int(req.args.get("min_id"))
+    since_id = _parse_int(req.args.get("since_id"))
 
-    if max_id:
-        query = query.filter(Status.id < int(max_id))
-    if min_id:
-        query = query.filter(Status.id > int(min_id))
-    if since_id:
-        query = query.filter(Status.id > int(since_id))
+    if max_id is not None:
+        query = query.filter(Status.id < max_id)
+    if min_id is not None:
+        query = query.filter(Status.id > min_id)
+    if since_id is not None:
+        query = query.filter(Status.id > since_id)
 
     return query.order_by(Status.id.desc()).limit(limit)
 

@@ -19,6 +19,7 @@ from models import (
 )
 from utils.auth import require_auth, optional_auth
 from utils.serializers import serialize_status
+from utils.serializers import _plaintext_from_html
 from utils.federation import (
     build_note_object,
     deliver_to_followers,
@@ -26,6 +27,13 @@ from utils.federation import (
 )
 
 api_statuses_bp = Blueprint("api_statuses", __name__)
+
+
+def _parse_int(value):
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return None
 
 
 @api_statuses_bp.route("/api/v1/statuses", methods=["POST"])
@@ -43,7 +51,7 @@ def create_status():
     if idem_key:
         existing = IdempotencyKey.query.filter_by(key=idem_key).first()
         if existing and existing.status_id:
-            status = Status.query.get(existing.status_id)
+            status = db.session.get(Status, existing.status_id)
             if status:
                 return jsonify(serialize_status(status, for_account="local"))
 
@@ -81,7 +89,7 @@ def create_status():
     in_reply_to_uri = None
     if in_reply_to_id:
         try:
-            parent = Status.query.get(int(in_reply_to_id))
+            parent = db.session.get(Status, int(in_reply_to_id))
             if parent:
                 in_reply_to_uri = parent.uri
                 in_reply_to_id = parent.id
@@ -109,7 +117,7 @@ def create_status():
     if media_ids:
         for mid in media_ids:
             try:
-                media = MediaAttachment.query.get(int(mid))
+                media = db.session.get(MediaAttachment, int(mid))
                 if media and media.status_id is None:
                     media.status_id = status.id
             except (ValueError, TypeError):
@@ -117,7 +125,7 @@ def create_status():
 
     # Update reply count on parent
     if status.in_reply_to_id:
-        parent = Status.query.get(status.in_reply_to_id)
+        parent = db.session.get(Status, status.in_reply_to_id)
         if parent:
             parent.replies_count = (parent.replies_count or 0) + 1
 
@@ -149,9 +157,17 @@ def create_status():
 @api_statuses_bp.route("/api/v1/statuses/<status_id>", methods=["GET"])
 @optional_auth
 def get_status(status_id):
-    status = Status.query.get(int(status_id))
+    sid = _parse_int(status_id)
+    if sid is None:
+        return jsonify({"error": "Record not found"}), 404
+    status = db.session.get(Status, sid)
     if not status or status.deleted_at:
         return jsonify({"error": "Record not found"}), 404
+
+    # Hide non-public content from unauthenticated requests.
+    if not request.oauth_token and status.visibility not in ("public", "unlisted"):
+        return jsonify({"error": "Record not found"}), 404
+
     account = "local" if request.oauth_token else None
     return jsonify(serialize_status(status, for_account=account))
 
@@ -159,14 +175,17 @@ def get_status(status_id):
 @api_statuses_bp.route("/api/v1/statuses/<status_id>", methods=["DELETE"])
 @require_auth
 def delete_status(status_id):
-    status = Status.query.get(int(status_id))
+    sid = _parse_int(status_id)
+    if sid is None:
+        return jsonify({"error": "Record not found"}), 404
+    status = db.session.get(Status, sid)
     if not status or status.remote:
         return jsonify({"error": "Record not found"}), 404
 
     # Return the status with text for "delete and redraft"
     result = serialize_status(status, for_account="local")
     # Include the source text
-    result["text"] = status.content
+    result["text"] = _plaintext_from_html(status.content)
 
     status.deleted_at = int(time.time())
     db.session.commit()
@@ -189,7 +208,10 @@ def delete_status(status_id):
 @api_statuses_bp.route("/api/v1/statuses/<status_id>", methods=["PUT"])
 @require_auth
 def edit_status(status_id):
-    status = Status.query.get(int(status_id))
+    sid = _parse_int(status_id)
+    if sid is None:
+        return jsonify({"error": "Record not found"}), 404
+    status = db.session.get(Status, sid)
     if not status or status.remote or status.deleted_at:
         return jsonify({"error": "Record not found"}), 404
 
@@ -237,13 +259,16 @@ def edit_status(status_id):
 @api_statuses_bp.route("/api/v1/statuses/<status_id>/source", methods=["GET"])
 @require_auth
 def status_source(status_id):
-    status = Status.query.get(int(status_id))
+    sid = _parse_int(status_id)
+    if sid is None:
+        return jsonify({"error": "Record not found"}), 404
+    status = db.session.get(Status, sid)
     if not status or status.deleted_at:
         return jsonify({"error": "Record not found"}), 404
     return jsonify(
         {
             "id": str(status.id),
-            "text": status.content,
+            "text": _plaintext_from_html(status.content),
             "spoiler_text": status.spoiler_text or "",
         }
     )
@@ -252,7 +277,10 @@ def status_source(status_id):
 @api_statuses_bp.route("/api/v1/statuses/<status_id>/context", methods=["GET"])
 @optional_auth
 def status_context(status_id):
-    status = Status.query.get(int(status_id))
+    sid = _parse_int(status_id)
+    if sid is None:
+        return jsonify({"error": "Record not found"}), 404
+    status = db.session.get(Status, sid)
     if not status or status.deleted_at:
         return jsonify({"error": "Record not found"}), 404
 
@@ -262,7 +290,7 @@ def status_context(status_id):
     ancestors = []
     current = status
     while current.in_reply_to_id:
-        parent = Status.query.get(current.in_reply_to_id)
+        parent = db.session.get(Status, current.in_reply_to_id)
         if not parent or parent.deleted_at:
             break
         ancestors.insert(0, serialize_status(parent, for_account=account))
@@ -290,7 +318,10 @@ def _get_descendants(status_id, result, account, depth=0):
 
 @api_statuses_bp.route("/api/v1/statuses/<status_id>/history", methods=["GET"])
 def status_history(status_id):
-    status = Status.query.get(int(status_id))
+    sid = _parse_int(status_id)
+    if sid is None:
+        return jsonify({"error": "Record not found"}), 404
+    status = db.session.get(Status, sid)
     if not status or status.deleted_at:
         return jsonify({"error": "Record not found"}), 404
     from utils.serializers import _epoch_to_iso
@@ -316,7 +347,10 @@ def status_history(status_id):
 @api_statuses_bp.route("/api/v1/statuses/<status_id>/favourite", methods=["POST"])
 @require_auth
 def favourite_status(status_id):
-    status = Status.query.get(int(status_id))
+    sid = _parse_int(status_id)
+    if sid is None:
+        return jsonify({"error": "Record not found"}), 404
+    status = db.session.get(Status, sid)
     if not status or status.deleted_at:
         return jsonify({"error": "Record not found"}), 404
 
@@ -345,7 +379,10 @@ def favourite_status(status_id):
 @api_statuses_bp.route("/api/v1/statuses/<status_id>/unfavourite", methods=["POST"])
 @require_auth
 def unfavourite_status(status_id):
-    status = Status.query.get(int(status_id))
+    sid = _parse_int(status_id)
+    if sid is None:
+        return jsonify({"error": "Record not found"}), 404
+    status = db.session.get(Status, sid)
     if not status or status.deleted_at:
         return jsonify({"error": "Record not found"}), 404
 
@@ -378,7 +415,10 @@ def unfavourite_status(status_id):
 @api_statuses_bp.route("/api/v1/statuses/<status_id>/reblog", methods=["POST"])
 @require_auth
 def reblog_status(status_id):
-    status = Status.query.get(int(status_id))
+    sid = _parse_int(status_id)
+    if sid is None:
+        return jsonify({"error": "Record not found"}), 404
+    status = db.session.get(Status, sid)
     if not status or status.deleted_at:
         return jsonify({"error": "Record not found"}), 404
 
@@ -423,7 +463,10 @@ def reblog_status(status_id):
 @api_statuses_bp.route("/api/v1/statuses/<status_id>/unreblog", methods=["POST"])
 @require_auth
 def unreblog_status(status_id):
-    status = Status.query.get(int(status_id))
+    sid = _parse_int(status_id)
+    if sid is None:
+        return jsonify({"error": "Record not found"}), 404
+    status = db.session.get(Status, sid)
     if not status or status.deleted_at:
         return jsonify({"error": "Record not found"}), 404
 
@@ -457,7 +500,10 @@ def unreblog_status(status_id):
 @api_statuses_bp.route("/api/v1/statuses/<status_id>/bookmark", methods=["POST"])
 @require_auth
 def bookmark_status(status_id):
-    status = Status.query.get(int(status_id))
+    sid = _parse_int(status_id)
+    if sid is None:
+        return jsonify({"error": "Record not found"}), 404
+    status = db.session.get(Status, sid)
     if not status or status.deleted_at:
         return jsonify({"error": "Record not found"}), 404
     existing = Bookmark.query.filter_by(status_id=status.id).first()
@@ -471,7 +517,10 @@ def bookmark_status(status_id):
 @api_statuses_bp.route("/api/v1/statuses/<status_id>/unbookmark", methods=["POST"])
 @require_auth
 def unbookmark_status(status_id):
-    status = Status.query.get(int(status_id))
+    sid = _parse_int(status_id)
+    if sid is None:
+        return jsonify({"error": "Record not found"}), 404
+    status = db.session.get(Status, sid)
     if not status or status.deleted_at:
         return jsonify({"error": "Record not found"}), 404
     Bookmark.query.filter_by(status_id=status.id).delete()
@@ -482,7 +531,10 @@ def unbookmark_status(status_id):
 @api_statuses_bp.route("/api/v1/statuses/<status_id>/mute", methods=["POST"])
 @require_auth
 def mute_conversation(status_id):
-    status = Status.query.get(int(status_id))
+    sid = _parse_int(status_id)
+    if sid is None:
+        return jsonify({"error": "Record not found"}), 404
+    status = db.session.get(Status, sid)
     if not status or status.deleted_at:
         return jsonify({"error": "Record not found"}), 404
     # We don't actually track muted conversations yet; just return the status
@@ -494,7 +546,10 @@ def mute_conversation(status_id):
 @api_statuses_bp.route("/api/v1/statuses/<status_id>/unmute", methods=["POST"])
 @require_auth
 def unmute_conversation(status_id):
-    status = Status.query.get(int(status_id))
+    sid = _parse_int(status_id)
+    if sid is None:
+        return jsonify({"error": "Record not found"}), 404
+    status = db.session.get(Status, sid)
     if not status or status.deleted_at:
         return jsonify({"error": "Record not found"}), 404
     return jsonify(serialize_status(status, for_account="local"))
@@ -503,7 +558,10 @@ def unmute_conversation(status_id):
 @api_statuses_bp.route("/api/v1/statuses/<status_id>/pin", methods=["POST"])
 @require_auth
 def pin_status(status_id):
-    status = Status.query.get(int(status_id))
+    sid = _parse_int(status_id)
+    if sid is None:
+        return jsonify({"error": "Record not found"}), 404
+    status = db.session.get(Status, sid)
     if not status or status.remote or status.deleted_at:
         return jsonify({"error": "Record not found"}), 404
     status.pinned = True
@@ -514,7 +572,10 @@ def pin_status(status_id):
 @api_statuses_bp.route("/api/v1/statuses/<status_id>/unpin", methods=["POST"])
 @require_auth
 def unpin_status(status_id):
-    status = Status.query.get(int(status_id))
+    sid = _parse_int(status_id)
+    if sid is None:
+        return jsonify({"error": "Record not found"}), 404
+    status = db.session.get(Status, sid)
     if not status or status.deleted_at:
         return jsonify({"error": "Record not found"}), 404
     status.pinned = False
@@ -524,7 +585,10 @@ def unpin_status(status_id):
 
 @api_statuses_bp.route("/api/v1/statuses/<status_id>/favourited_by", methods=["GET"])
 def favourited_by(status_id):
-    status = Status.query.get(int(status_id))
+    sid = _parse_int(status_id)
+    if sid is None:
+        return jsonify({"error": "Record not found"}), 404
+    status = db.session.get(Status, sid)
     if not status or status.deleted_at:
         return jsonify({"error": "Record not found"}), 404
     favs = Favourite.query.filter_by(status_id=status.id, local=False).all()
