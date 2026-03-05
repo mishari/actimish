@@ -2,6 +2,9 @@
 Serialize database models to Mastodon API JSON responses.
 """
 
+import html
+import re
+
 import config
 from models import (
     Status,
@@ -13,12 +16,118 @@ from models import (
 )
 
 
+def _plaintext_from_html(value):
+    if not value:
+        return ""
+    text = value
+    text = re.sub(r"<\s*br\s*/?\s*>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</\s*p\s*>", "\n\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = html.unescape(text)
+    # Normalize whitespace while preserving newlines.
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"[ \t\f\v]+", " ", text)
+    text = re.sub(r" *\n *", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _extract_mentions_and_tags(status_content):
+    text = _plaintext_from_html(status_content)
+
+    mentions = []
+    seen_accts = set()
+
+    mention_re = re.compile(
+        r"(?<![A-Za-z0-9_])@([A-Za-z0-9_]+)(?:@([A-Za-z0-9.-]+))?"
+    )
+    for m in mention_re.finditer(text):
+        username = m.group(1)
+        domain = m.group(2)
+
+        if domain:
+            acct = f"{username}@{domain}"
+        else:
+            acct = username
+
+        acct_lower = acct.lower()
+        if acct_lower in seen_accts:
+            continue
+        seen_accts.add(acct_lower)
+
+        if (not domain and username == config.USERNAME) or (
+            domain and username == config.USERNAME and domain == config.DOMAIN
+        ):
+            mentions.append(
+                {
+                    "id": "1",
+                    "username": config.USERNAME,
+                    "acct": config.USERNAME,
+                    "url": f"{_base_url()}/@{config.USERNAME}",
+                }
+            )
+            continue
+
+        ra = None
+        if domain:
+            ra = RemoteAccount.query.filter_by(
+                username=username, domain=domain
+            ).first()
+
+        if ra:
+            mentions.append(
+                {
+                    "id": str(ra.id),
+                    "username": ra.username,
+                    "acct": f"{ra.username}@{ra.domain}",
+                    "url": ra.url or ra.uri or "",
+                }
+            )
+        else:
+            url = ""
+            if domain:
+                url = f"https://{domain}/@{username}"
+            mentions.append(
+                {
+                    "id": acct,
+                    "username": username,
+                    "acct": acct,
+                    "url": url,
+                }
+            )
+
+    tags = []
+    seen_tags = set()
+    tag_re = re.compile(r"(?<![A-Za-z0-9_])#([A-Za-z0-9_]+)")
+    for m in tag_re.finditer(text):
+        name = m.group(1).lower()
+        if name in seen_tags:
+            continue
+        seen_tags.add(name)
+        tags.append({"name": name, "url": f"{_base_url()}/tags/{name}"})
+
+    return mentions, tags
+
+
 def _base_url():
     return f"https://{config.DOMAIN}"
 
 
 def serialize_account_local():
     """Serialize the single local user account."""
+    followers_count = 0
+    following_count = 0
+    statuses_count = 0
+    try:
+        from models import Follower, Following, Status as StatusModel
+
+        followers_count = Follower.query.filter_by(approved=True).count()
+        following_count = Following.query.filter_by(approved=True).count()
+        statuses_count = StatusModel.query.filter_by(remote=False, deleted_at=None).count()
+    except Exception:
+        # During early startup / migrations, DB may not be ready.
+        pass
+
     return {
         "id": "1",
         "username": config.USERNAME,
@@ -36,9 +145,9 @@ def serialize_account_local():
         "avatar_static": f"{_base_url()}/avatar.png",
         "header": f"{_base_url()}/header.png",
         "header_static": f"{_base_url()}/header.png",
-        "followers_count": 0,
-        "following_count": 0,
-        "statuses_count": 0,
+        "followers_count": followers_count,
+        "following_count": following_count,
+        "statuses_count": statuses_count,
         "last_status_at": None,
         "noindex": False,
         "emojis": [],
@@ -154,6 +263,8 @@ def serialize_status(s: Status, for_account=None):
             reblog_of_id=s.id, remote=False, deleted_at=None
         ).first() is not None
 
+    mentions, tags = _extract_mentions_and_tags(s.content)
+
     return {
         "id": str(s.id),
         "created_at": _epoch_to_iso(s.created_at),
@@ -180,8 +291,8 @@ def serialize_status(s: Status, for_account=None):
         "application": {"name": "Actimish", "website": None},
         "account": account,
         "media_attachments": media,
-        "mentions": [],
-        "tags": [],
+        "mentions": mentions,
+        "tags": tags,
         "emojis": [],
         "card": None,
         "poll": None,

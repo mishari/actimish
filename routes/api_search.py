@@ -15,12 +15,19 @@ from utils.serializers import (
 api_search_bp = Blueprint("api_search", __name__)
 
 
+def _parse_int(value, default=None):
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
+
+
 @api_search_bp.route("/api/v2/search", methods=["GET"])
 @optional_auth
 def search():
     q = request.args.get("q", "").strip()
     search_type = request.args.get("type")
-    limit = min(int(request.args.get("limit", 20)), 40)
+    limit = min(_parse_int(request.args.get("limit"), 20), 40)
     resolve = request.args.get("resolve") == "true"
 
     accounts = []
@@ -60,6 +67,8 @@ def search():
             Status.deleted_at.is_(None),
             Status.content.ilike(f"%{q}%"),
         )
+        if not request.oauth_token:
+            query = query.filter(Status.visibility.in_(["public", "unlisted"]))
         results = query.order_by(Status.id.desc()).limit(limit).all()
         statuses = [serialize_status(s, for_account=account) for s in results]
 

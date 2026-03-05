@@ -12,6 +12,13 @@ from utils.serializers import serialize_status
 api_misc_bp = Blueprint("api_misc", __name__)
 
 
+def _parse_int(value, default=None):
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
+
+
 # ── Markers ───────────────────────────────────────────────────────
 
 
@@ -70,12 +77,12 @@ def save_markers():
 @api_misc_bp.route("/api/v1/favourites", methods=["GET"])
 @require_auth
 def list_favourites():
-    limit = min(int(request.args.get("limit", 20)), 40)
-    max_id = request.args.get("max_id")
+    limit = min(_parse_int(request.args.get("limit"), 20), 40)
+    max_id = _parse_int(request.args.get("max_id"))
 
     query = Favourite.query.filter_by(local=True)
-    if max_id:
-        query = query.filter(Favourite.id < int(max_id))
+    if max_id is not None:
+        query = query.filter(Favourite.id < max_id)
 
     favs = query.order_by(Favourite.id.desc()).limit(limit).all()
     result = []
@@ -88,12 +95,12 @@ def list_favourites():
 @api_misc_bp.route("/api/v1/bookmarks", methods=["GET"])
 @require_auth
 def list_bookmarks():
-    limit = min(int(request.args.get("limit", 20)), 40)
-    max_id = request.args.get("max_id")
+    limit = min(_parse_int(request.args.get("limit"), 20), 40)
+    max_id = _parse_int(request.args.get("max_id"))
 
     query = Bookmark.query
-    if max_id:
-        query = query.filter(Bookmark.id < int(max_id))
+    if max_id is not None:
+        query = query.filter(Bookmark.id < max_id)
 
     bookmarks = query.order_by(Bookmark.id.desc()).limit(limit).all()
     result = []
