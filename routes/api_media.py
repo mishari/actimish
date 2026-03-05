@@ -214,7 +214,7 @@ def upload_media_v1():
 @require_auth
 def get_media(media_id):
     """Check media processing status."""
-    attachment = MediaAttachment.query.get(media_id)
+    attachment = db.session.get(MediaAttachment, media_id)
     if not attachment:
         return jsonify({"error": "Record not found"}), 404
 
@@ -228,7 +228,7 @@ def get_media(media_id):
 @require_auth
 def update_media(media_id):
     """Update media metadata before posting."""
-    attachment = MediaAttachment.query.get(media_id)
+    attachment = db.session.get(MediaAttachment, media_id)
     if not attachment:
         return jsonify({"error": "Record not found"}), 404
 

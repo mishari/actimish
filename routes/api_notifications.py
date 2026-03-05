@@ -68,7 +68,7 @@ def list_notifications():
 @api_notifications_bp.route("/api/v1/notifications/<int:notif_id>", methods=["GET"])
 @require_auth
 def get_notification(notif_id):
-    notif = Notification.query.get(notif_id)
+    notif = db.session.get(Notification, notif_id)
     if not notif:
         return jsonify({"error": "Record not found"}), 404
     return jsonify(serialize_notification(notif))
@@ -87,7 +87,7 @@ def clear_notifications():
 )
 @require_auth
 def dismiss_notification(notif_id):
-    notif = Notification.query.get(notif_id)
+    notif = db.session.get(Notification, notif_id)
     if notif:
         db.session.delete(notif)
         db.session.commit()

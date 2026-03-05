@@ -156,7 +156,7 @@ def get_account(account_id):
     aid = _parse_int(account_id)
     if aid is None:
         return jsonify({"error": "Record not found"}), 404
-    ra = RemoteAccount.query.get(aid)
+    ra = db.session.get(RemoteAccount, aid)
     if ra:
         return jsonify(serialize_remote_account(ra))
     return jsonify({"error": "Record not found"}), 404
@@ -179,7 +179,7 @@ def account_statuses(account_id):
         aid = _parse_int(account_id)
         if aid is None:
             return jsonify({"error": "Record not found"}), 404
-        ra = RemoteAccount.query.get(aid)
+        ra = db.session.get(RemoteAccount, aid)
         if not ra:
             return jsonify({"error": "Record not found"}), 404
         query = Status.query.filter_by(
@@ -242,7 +242,7 @@ def follow_account(account_id):
     aid = _parse_int(account_id)
     if aid is None:
         return jsonify({"error": "Record not found"}), 404
-    ra = RemoteAccount.query.get(aid)
+    ra = db.session.get(RemoteAccount, aid)
     if not ra:
         return jsonify({"error": "Record not found"}), 404
 
@@ -284,7 +284,7 @@ def unfollow_account(account_id):
     aid = _parse_int(account_id)
     if aid is None:
         return jsonify({"error": "Record not found"}), 404
-    ra = RemoteAccount.query.get(aid)
+    ra = db.session.get(RemoteAccount, aid)
     if not ra:
         return jsonify({"error": "Record not found"}), 404
 
@@ -329,7 +329,7 @@ def block_account(account_id):
     aid = _parse_int(account_id)
     if aid is None:
         return jsonify({"error": "Record not found"}), 404
-    ra = RemoteAccount.query.get(aid)
+    ra = db.session.get(RemoteAccount, aid)
     if not ra:
         return jsonify({"error": "Record not found"}), 404
     existing = Block.query.filter_by(remote_account_id=ra.id).first()
@@ -349,7 +349,7 @@ def unblock_account(account_id):
     aid = _parse_int(account_id)
     if aid is None:
         return jsonify({"error": "Record not found"}), 404
-    ra = RemoteAccount.query.get(aid)
+    ra = db.session.get(RemoteAccount, aid)
     if not ra:
         return jsonify({"error": "Record not found"}), 404
     Block.query.filter_by(remote_account_id=ra.id).delete()
@@ -363,7 +363,7 @@ def mute_account(account_id):
     aid = _parse_int(account_id)
     if aid is None:
         return jsonify({"error": "Record not found"}), 404
-    ra = RemoteAccount.query.get(aid)
+    ra = db.session.get(RemoteAccount, aid)
     if not ra:
         return jsonify({"error": "Record not found"}), 404
     existing = Mute.query.filter_by(remote_account_id=ra.id).first()
@@ -383,7 +383,7 @@ def unmute_account(account_id):
     aid = _parse_int(account_id)
     if aid is None:
         return jsonify({"error": "Record not found"}), 404
-    ra = RemoteAccount.query.get(aid)
+    ra = db.session.get(RemoteAccount, aid)
     if not ra:
         return jsonify({"error": "Record not found"}), 404
     Mute.query.filter_by(remote_account_id=ra.id).delete()
@@ -408,7 +408,7 @@ def follow_requests():
 )
 @require_auth
 def authorize_follow(req_id):
-    follower = Follower.query.get(req_id)
+    follower = db.session.get(Follower, req_id)
     if follower:
         follower.approved = True
         db.session.commit()
@@ -420,7 +420,7 @@ def authorize_follow(req_id):
 )
 @require_auth
 def reject_follow(req_id):
-    follower = Follower.query.get(req_id)
+    follower = db.session.get(Follower, req_id)
     if follower:
         db.session.delete(follower)
         db.session.commit()

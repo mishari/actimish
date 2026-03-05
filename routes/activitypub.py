@@ -213,7 +213,7 @@ def _handle_create(data):
 
     # Update reply count on parent
     if in_reply_to_id:
-        parent = Status.query.get(in_reply_to_id)
+        parent = db.session.get(Status, in_reply_to_id)
         if parent:
             parent.replies_count = (parent.replies_count or 0) + 1
             db.session.commit()
