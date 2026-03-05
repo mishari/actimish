@@ -66,11 +66,22 @@ def _process_upload(file_obj):
 
     # Get image dimensions if applicable
     width, height = None, None
+    thumb_relative_path = None
     if media_type == "image":
         try:
             from PIL import Image
             with Image.open(file_path) as img:
                 width, height = img.size
+
+                thumb_name = f"{os.path.splitext(unique_name)[0]}_thumb{ext}"
+                thumb_path = os.path.join(media_dir, thumb_name)
+                thumb = img.copy()
+                thumb.thumbnail((800, 800))
+                try:
+                    thumb.save(thumb_path)
+                except Exception:
+                    thumb.save(thumb_path, format="PNG")
+                thumb_relative_path = f"{subdir}/{thumb_name}"
         except Exception:
             pass
 
@@ -79,6 +90,7 @@ def _process_upload(file_obj):
 
     attachment = MediaAttachment(
         file_path=relative_path,
+        thumbnail_path=thumb_relative_path,
         media_type=media_type,
         mime_type=mime_type,
         size=file_size,
