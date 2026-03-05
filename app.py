@@ -3,9 +3,12 @@ Flask application factory for Actimish.
 """
 
 import os
-from flask import Flask
+import logging
+from flask import Flask, jsonify
 from models import db
 import config
+
+logging.basicConfig(level=logging.INFO)
 
 
 def create_app():
@@ -25,6 +28,38 @@ def create_app():
         # Generate RSA keypair if not present
         from utils.crypto import ensure_keypair
         ensure_keypair()
+
+    # ── CORS: allow Tusky and other clients ───────────────────────
+    @app.after_request
+    def add_cors_headers(response):
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = (
+            "Authorization, Content-Type, Idempotency-Key"
+        )
+        response.headers["Access-Control-Allow-Methods"] = (
+            "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+        )
+        response.headers["Access-Control-Expose-Headers"] = "Link"
+        return response
+
+    @app.before_request
+    def handle_preflight():
+        from flask import request
+        if request.method == "OPTIONS":
+            return "", 204
+
+    # ── Error handlers ────────────────────────────────────────────
+    @app.errorhandler(404)
+    def not_found(e):
+        return jsonify({"error": "Record not found"}), 404
+
+    @app.errorhandler(413)
+    def too_large(e):
+        return jsonify({"error": "File too large"}), 413
+
+    @app.errorhandler(500)
+    def internal_error(e):
+        return jsonify({"error": "Internal server error"}), 500
 
     # Register blueprints
     from routes.wellknown import wellknown_bp

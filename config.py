@@ -21,9 +21,23 @@ MEDIA_DIR = os.path.join(DATA_DIR, "media")
 KEYS_DIR = os.path.join(DATA_DIR, "keys")
 
 # ── Flask / Security ──────────────────────────────────────────────
-SECRET_KEY = os.environ.get("ACTIMISH_SECRET_KEY", secrets.token_hex(32))
+def _load_secret_key():
+    """Load secret key from env, file, or generate a new one."""
+    key = os.environ.get("ACTIMISH_SECRET_KEY")
+    if key:
+        return key
+    key_file = os.path.join(DATA_DIR, "secret_key.txt")
+    if os.path.exists(key_file):
+        with open(key_file, "r") as f:
+            return f.read().strip()
+    return secrets.token_hex(32)
+
+SECRET_KEY = _load_secret_key()
 SQLALCHEMY_DATABASE_URI = f"sqlite:///{DB_PATH}"
 SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+# Allow large request bodies for media uploads
+MAX_CONTENT_LENGTH = 120 * 1024 * 1024  # 120 MB
 
 # ── Media limits ──────────────────────────────────────────────────
 MAX_IMAGE_SIZE = 10 * 1024 * 1024       # 10 MB
